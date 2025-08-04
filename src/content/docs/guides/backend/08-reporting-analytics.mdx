@@ -1,0 +1,160 @@
+---
+title: Reporting & Analytics
+description: Endpoints for aggregating business data and generating PDF reports.
+---
+
+We provide two main reporting endpoints:
+
+1. **Dashboard Data** (`GET /api/analytics/dashboard`)  
+   Returns key metrics for charts and summary views.
+2. **Customer Report PDF** (`GET /api/reports/customers/:id/pdf`)  
+   Streams a detailed PDF report—with narrative, charts, and tables—for a given customer.
+
+---
+
+## Dashboard Endpoint
+
+**Path:** `GET /api/analytics/dashboard`  
+**Controller:** `src/controllers/dashboardController.ts`
+
+This endpoint aggregates:
+
+- **Total customers** (simple `COUNT(*)` on `customers` table)
+- **Orders in the past year**, grouped by day (`DATE_TRUNC('day', order_date)`)
+- **Order locations**, counting orders per delivery country
+- **Toy category distribution**, summing item quantities by `products.category`
+
+```ts
+// src/controllers/dashboardController.ts
+export async function getDashboard(req, res, next) {
+  // 1) Total customers
+  const [{ count: customerCount }] = await db
+    .select({ count: sql`COUNT(*)` })
+    .from(Customers)
+    .execute();
+
+  // 2) Orders by day (last year)
+  const ordersByDayRaw = await db
+    .select({
+      day: sql`TO_CHAR(DATE_TRUNC('day', ${Orders.orderDate}), 'YYYY-MM-DD')`,
+      count: sql`COUNT(*)`,
+    })
+    .from(Orders)
+    .where(sql`${Orders.orderDate} >= NOW() - INTERVAL '1 year'`)
+    .groupBy(sql`DATE_TRUNC('day', ${Orders.orderDate})`)
+    .orderBy(sql`DATE_TRUNC('day', ${Orders.orderDate})`)
+    .execute();
+
+  // 3) Location counts
+  const locationRaw = await db
+    .select({ country: Orders.deliveryCountry, count: sql`COUNT(*)` })
+    .from(Orders)
+    .groupBy(Orders.deliveryCountry)
+    .execute();
+
+  // 4) Category distribution
+  const distRaw = await db
+    .select({
+      category: Products.category,
+      count: sql`SUM(${OrderItems.quantity})`,
+    })
+    .from(OrderItems)
+    .innerJoin(Products, eq(OrderItems.productId, Products.id))
+    .groupBy(Products.category)
+    .execute();
+
+  return res.json({
+    message: "Dashboard data retrieved successfully.",
+    data: {
+      totalCustomers: parseInt(customerCount, 10),
+      ordersByDay: ordersByDayRaw.map((r) => ({ day: r.day, count: +r.count })),
+      locationData: locationRaw.map((r) => ({
+        country: r.country,
+        count: +r.count,
+      })),
+      typeDistribution: distRaw.map((r) => ({
+        category: r.category,
+        count: +r.count,
+      })),
+    },
+  });
+}
+```
+
+---
+
+## Customer Report PDF
+
+**Path:** `GET /api/reports/customers/:id/pdf`
+**Controller:** `src/controllers/reportController.ts`
+
+Generates a comprehensive PDF including:
+
+1. **Executive summary** auto-generated via OpenAI (GPT).
+2. **Line chart** of monthly order counts (last 9 months) via ChartJSNodeCanvas.
+3. **Pie chart** showing toy category breakdown.
+4. **Statistics list** (total orders, revenue, status breakdown).
+5. **Full orders table** with dates, statuses, and amounts.
+
+Key steps in the controller:
+
+```ts
+// select customer, orders, items from DB
+const [customer] = await db
+  .select()
+  .from(Customers)
+  .where(eq(Customers.id, customerId))
+  .execute();
+const orders = await db
+  .select()
+  .from(Orders)
+  .where(eq(Orders.customerId, customerId))
+  .execute();
+const items = await db
+  .select({
+    orderId: OrderItems.orderId,
+    quantity: OrderItems.quantity,
+    category: Products.category,
+  })
+  .from(OrderItems)
+  .innerJoin(Products, eq(OrderItems.productId, Products.id))
+  .where(
+    inArray(
+      OrderItems.orderId,
+      orders.map((o) => o.id)
+    )
+  )
+  .execute();
+
+// compute stats and build charts
+const summaryPrompt = `You are a business analyst... customer ${customer.name}: Total orders ${orders.length}, ...`;
+const summary = await client.chat.completions.create({
+  /* GPT params */
+});
+
+const ordersChart = await chartJs.renderToBuffer({
+  /* line chart config */
+});
+const categoryChart = await chartJs.renderToBuffer({
+  /* pie chart config */
+});
+
+// assemble PDF with PDFKit
+const doc = new PDFDocument({ margin: 40, size: "A4" });
+res.setHeader("Content-Type", "application/pdf");
+doc.pipe(res);
+doc.fontSize(20).text(`Customer Report: ${customer.name}`, { align: "center" });
+doc.text(summary).moveDown();
+// embed charts and tables...
+doc.end();
+```
+
+---
+
+## Benefits
+
+- **Single source of truth:** All business metrics computed on the server.
+- **Extensible:** Add new metrics (e.g. revenue by region) by extending the controller.
+- **Automated insights:** GPT-generated summaries provide narrative.
+- **On-demand reporting:** PDF streams directly to clients for download.
+- **Reusability:** Charting logic and PDF layout centralized in one place.
