@@ -1,0 +1,242 @@
+---
+title: Project Structure
+description: Overview of the front-end project structure for the Toy Store Management App.
+---
+
+This page walks through the top-level folders and key files in the front-end codebase, explaining where to find components, pages, services, hooks, types, context providers, and routing setup.
+
+---
+
+## Folder Layout
+
+```bash
+src/
+├── components/
+│   ├── ui/                # shadcn/ui and other design-system primitives
+│   └── …                  # shared, reusable components (buttons, modals, forms, etc.)
+├── pages/                 # page-level React components (one per route)
+├── services/              # API-interaction classes (e.g. CustomerService.ts)
+├── hooks/                 # custom React hooks wrapping services (useCustomers.ts, etc.)
+├── types/                 # TypeScript interfaces & types
+├── context/               # React contexts (AuthContext, ThemeContext, etc.)
+├── router.tsx             # React Router setup with protected & admin routes
+└── utils/                 # helper functions and constants (e.g. API_URL)
+```
+
+## `components/`
+
+### `ui/`
+
+Folder for unstyled or minimally styled components from **shadcn/ui** (built on Radix + Tailwind).
+
+### Other subfolders
+
+Feature-agnostic, reusable components such as `Button/`, `Modal/`, `FormField/`, etc.
+
+---
+
+## `pages/`
+
+Each file under `src/pages/` corresponds to a route in your app. Examples:
+
+- `Login.tsx`
+- `Dashboard.tsx`
+- `CustomerList.tsx`
+- `CreateCustomer.tsx`
+- `UpdateCustomer.tsx`
+- `ViewCustomer.tsx`
+- `OrdersListPage.tsx`
+- …and so on.
+
+---
+
+## `services/`
+
+Classes encapsulating all HTTP interactions via Axios.
+
+**Example: `CustomerService.ts`**
+
+```ts
+// src/services/CustomerService.ts
+import axios from "axios";
+import type { Customer } from "@/types/Customer";
+import type { ApiResponse } from "@/types/ApiResponse";
+import { API_URL } from "./constants";
+
+export default class CustomerService {
+  static async list(token: string): Promise<ApiResponse<Customer[]>> {
+    const res = await axios.get<ApiResponse<Customer[]>>(
+      `${API_URL}/customers`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return res.data;
+  }
+  // …get, create, update, delete methods…
+}
+```
+
+---
+
+## `hooks/`
+
+Custom React Query hooks that wrap service calls and handle caching/loading states.
+
+```ts
+// src/hooks/useCustomers.ts
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import CustomerService from "@/services/CustomerService";
+
+export function useCustomers() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["customers"],
+    enabled: !!user,
+    queryFn: async () => {
+      const res = await CustomerService.list(user!.token);
+      return res.data;
+    },
+  });
+}
+```
+
+---
+
+## `types/`
+
+All shared TypeScript types and interfaces live here.
+Example files:
+
+Customer.ts
+
+Order.ts
+
+User.ts
+
+ApiResponse.ts
+
+---
+
+## `context/`
+
+React Context providers for auth and global state.
+
+Example: AuthContext.tsx
+
+```ts
+// src/context/AuthContext.tsx
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
+import type { User } from "@/types/User";
+
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  login: (data: { user: User }) => void;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("user");
+    if (stored) setUser(JSON.parse(stored));
+    setLoading(false);
+  }, []);
+
+  const login = ({ user }: { user: User }) => {
+    setUser(user);
+    localStorage.setItem("user", JSON.stringify(user));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem("user");
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}
+```
+
+---
+
+## `router.tsx`
+
+Centralized routing using React Router v6, with protected and admin-only routes.
+
+```ts
+// src/router.tsx
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
+import Login from "@/pages/Login";
+import Dashboard from "@/pages/Dashboard";
+// …other imports…
+
+function ProtectedRoute({ children }: { children: JSX.Element }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user ? children : <Navigate to="/login" />;
+}
+
+function AdminProtectedRoute({ children }: { children: JSX.Element }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user?.role === "admin" ? children : <Navigate to="/" />;
+}
+
+export default function Router() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/customers"
+          element={
+            <ProtectedRoute>
+              <CustomerList />
+            </ProtectedRoute>
+          }
+        />
+        {/* …more protected/admin routes… */}
+        <Route
+          path="*"
+          element={
+            <ProtectedRoute>
+              <NotFoundPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+This structure keeps your code organized by concern—presentation (components/), pages (pages/), data (services/, hooks/), types, and state (context/)—making it easy to extend and maintain.

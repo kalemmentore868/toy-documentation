@@ -1,0 +1,51 @@
+---
+title: Introduction to the Backend Guide
+description: Overview of the backend architecture, technologies, and guide structure for the Toy Store Management App.
+---
+
+Welcome to the backend documentation for the Toy Store Management App. This guide will walk you through the server-side architecture, including how we:
+
+- Use **Node.js** and **Express** to build a RESTful API
+- Leverage **Xata**, a managed PostgreSQL-as-a-Service, for data storage
+- Implement authentication, authorization, and validation via middleware
+- Structure routes and controllers for maintainability
+- Handle errors with custom `ExpressError` classes and a global error handler
+- Organize services and controllers to interact cleanly with our database
+- Generate reports and analytics endpoints for business insights
+- Write unit and integration tests to ensure reliability
+
+By following these pages, you’ll gain a deep understanding of our design choices and middleware patterns.
+
+## Purpose & Audience
+
+This guide is aimed at backend developers who will build, extend, or maintain the Toy Store API. You should be familiar with JavaScript/TypeScript and basic REST principles.
+
+## How to Use This Guide
+
+1. **02-Setup**  
+   Get the project running locally: install dependencies, configure environment variables, and start the server.
+
+2. **03-Database Architecture**  
+   Learn how we define schemas in Xata and initialize the client.
+
+3. **04-Authentication and Middleware**  
+   Understand how JWTs, route protection, and request validation are implemented.
+
+4. **05-Routing Structure**  
+   Explore how routes are organized and mounted under `/api`.
+
+5. **06-Error Handling**  
+   See our custom error classes and global error handler in action.
+
+6. **07-Controllers and Services**  
+   Delve into controller logic and service-layer database interactions.
+
+7. **08-Validation**  
+   Discover how input is validated and sanitized before reaching controllers.
+
+8. **09-Reporting and Analytics**  
+   Review endpoints that aggregate data and generate PDF reports.
+
+## Next Steps
+
+Proceed to **Setup** to install and configure the backend, then follow along in order to build a complete picture of our server-side architecture.

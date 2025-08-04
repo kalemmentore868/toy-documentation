@@ -1,0 +1,116 @@
+---
+title: Error Handling
+description: How consistent error handling is implemented using custom error classes and middleware.
+---
+
+Consistent error handling is achieved via:
+
+- **Custom Error Classes** for common HTTP errors.
+- A **404 Catch-All** to handle unknown routes.
+- A **Global Error Handler** to format all errors into a uniform JSON response.
+
+---
+
+## Custom Error Classes
+
+We define an `ExpressError` base and specific subclasses:
+
+```ts
+class ExpressError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+class NotFoundError extends ExpressError {
+  constructor(message = "Not Found") {
+    super(message, 404);
+  }
+}
+
+class UnauthorizedError extends ExpressError {
+  constructor(message = "Unauthorized") {
+    super(message, 401);
+  }
+}
+
+class BadRequestError extends ExpressError {
+  constructor(message = "Bad Request") {
+    super(message, 400);
+  }
+}
+
+class ForbiddenError extends ExpressError {
+  constructor(message = "Forbidden Request") {
+    super(message, 403);
+  }
+}
+
+class InternalServerError extends ExpressError {
+  constructor(message = "Internal Server Error") {
+    super(message, 500);
+  }
+}
+```
+
+---
+
+## 404 Catch-All Middleware
+
+Any request not matching a route will trigger a `NotFoundError`:
+
+```ts
+app.use((_req, _res, _next) => {
+  next(new NotFoundError());
+});
+```
+
+---
+
+## Global Error Handler
+
+All errors thrown or passed via `next(err)` are caught here and returned in a consistent format:
+
+```ts
+app.use((err: ExpressError, _req, res, _next) => {
+  const status = err.status || 500;
+  return res.status(status).json({
+    error: { message: err.message, status },
+  });
+});
+```
+
+---
+
+## Controller Usage
+
+Controllers simply throw or forward errors; the global handler does the rest:
+
+```ts
+export async function getCustomerById(req, res, next) {
+  try {
+    const [customer] = await db
+      .select()
+      .from(Customers)
+      .where(eq(Customers.id, req.params.id))
+      .execute();
+    if (!customer)
+      throw new NotFoundError(`Customer not found: ${req.params.id}`);
+    res.json({ message: "Customer retrieved successfully.", data: customer });
+  } catch (err) {
+    next(err);
+  }
+}
+```
+
+---
+
+## Benefits
+
+- **Consistency**: Uniform JSON error shape `{ error: { message, status } }` across all endpoints.
+- **Separation of Concerns**: Controllers focus on logic; middleware handles formatting.
+- **Maintainability**: New error types or logging can be added centrally.
+- **Extensibility**: Easy integration of metrics, tracing, or alerting in one place.
+- **Debuggability**: Clear status codes and messages make troubleshooting straightforward.

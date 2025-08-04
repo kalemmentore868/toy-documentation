@@ -1,0 +1,243 @@
+---
+title: Authentication & Middleware
+description: How authentication, authorization, and request validation are implemented in the Toy Store API.
+---
+
+Our API secures endpoints using JWT-based authentication, role-based authorization, and request validation middleware. All auth routes are mounted under `/api/auth`.
+
+---
+
+## Auth Controllers
+
+### `registerUser`
+
+Creates a new user (admin only).
+
+```ts
+// src/controllers/authController.ts
+export async function registerUser(req: Request, res: Response) {
+  try {
+    const { email, password, username, role } = req.body;
+    if (!email || !password) {
+      throw new BadRequestError("Email and password are required.");
+    }
+    // Check for existing email
+    const [{ count }] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(Users)
+      .where(eq(Users.email, email))
+      .execute();
+    if (Number(count) > 0) {
+      throw new BadRequestError("Email already exists.");
+    }
+    // Hash and insert
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const [user] = await db
+      .insert(Users)
+      .values({
+        email,
+        passwordHash,
+        username: username ?? "",
+        role: role ?? "manager",
+      })
+      .returning();
+    res.status(201).json({
+      message: "User registered successfully.",
+      data: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    next(new InternalServerError("Failed to register user."));
+  }
+}
+```
+
+### `loginUser`
+
+Verifies credentials and returns a JWT.
+
+```ts
+// src/controllers/authController.ts
+export async function loginUser(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      throw new BadRequestError("Email and password are required.");
+    }
+    const [user] = await db
+      .select()
+      .from(Users)
+      .where(eq(Users.email, email))
+      .execute();
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      throw new UnauthorizedError("Invalid credentials.");
+    }
+    const token = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+        username: user.username,
+        email: user.email,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: "7d" }
+    );
+    res.json({
+      message: "Login successful",
+      data: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        token,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+```
+
+---
+
+## Auth Routes & Validation
+
+We mount and protect our auth routes with validation schemas:
+
+```ts
+// src/routes/auth.ts
+import { Router } from "express";
+import { registerUser, loginUser } from "../controllers/authController";
+import { validate } from "../middleware/validate";
+import { loginSchema, registerSchema } from "../schemas/auth";
+import { ensureAdmin } from "../middleware/authMiddleware";
+
+const router = Router();
+
+router.post("/register", ensureAdmin, validate(registerSchema), registerUser);
+router.post("/login", validate(loginSchema), loginUser);
+
+export default router;
+
+// In app.ts or server.ts
+app.use("/api/auth", authRoutes);
+```
+
+- **`ensureAdmin`**: only admins can register new users.
+- **`validate(...)`**: applies Zod schema validation to `req.body`.
+
+---
+
+## JWT Authentication Middleware
+
+### `authenticateJWT`
+
+Parses and verifies JWT if provided, storing payload in `res.locals.user`.
+
+```ts
+// src/middleware/authMiddleware.ts
+export function authenticateJWT(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.replace(/^[Bb]earer\s+/i, "").trim();
+    try {
+      res.locals.user = jwt.verify(
+        token,
+        process.env.JWT_SECRET!
+      ) as JwtPayload;
+    } catch {
+      // invalid token: ignore, will be caught by ensureLoggedIn
+    }
+  }
+  next();
+}
+```
+
+### `ensureLoggedIn` & `ensureAdmin`
+
+Enforce that a valid user is present (and optionally an admin).
+
+```ts
+export function ensureLoggedIn(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  if (!res.locals.user) {
+    return next(new UnauthorizedError("Authentication required"));
+  }
+  next();
+}
+
+export function ensureAdmin(req: Request, res: Response, next: NextFunction) {
+  const user = res.locals.user as JwtPayload | undefined;
+  if (!user) {
+    return next(new UnauthorizedError("Authentication required"));
+  }
+  if (user.role !== "admin") {
+    return next(new ForbiddenError("Admin privileges required"));
+  }
+  next();
+}
+```
+
+---
+
+## Global Error Handler
+
+All custom `ExpressError` subclasses funnel through a single error middleware:
+
+```ts
+// src/helpers/errors.ts
+class ExpressError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+export class NotFoundError extends ExpressError {
+  constructor(msg = "Not Found") {
+    super(msg, 404);
+  }
+}
+export class UnauthorizedError extends ExpressError {
+  constructor(msg = "Unauthorized") {
+    super(msg, 401);
+  }
+}
+export class BadRequestError extends ExpressError {
+  constructor(msg = "Bad Request") {
+    super(msg, 400);
+  }
+}
+export class ForbiddenError extends ExpressError {
+  constructor(msg = "Forbidden") {
+    super(msg, 403);
+  }
+}
+export class InternalServerError extends ExpressError {
+  constructor(msg = "Internal Server Error") {
+    super(msg, 500);
+  }
+}
+
+// In app.ts
+app.use((err: ExpressError, _req, res, _next) => {
+  res
+    .status(err.status || 500)
+    .json({ error: { message: err.message, status: err.status } });
+});
+```
+
+This centralized handler returns consistent JSON error responses across all routes.

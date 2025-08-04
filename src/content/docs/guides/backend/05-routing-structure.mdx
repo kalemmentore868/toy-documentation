@@ -1,0 +1,97 @@
+---
+title: Routing Structure
+description: How API routes are organized, mounted, and structured in the Toy Store backend.
+---
+
+Our Express app organizes endpoints by resource and mounts them under logical URL prefixes. This keeps controllers focused and makes it easy to locate, test, and extend routes.
+
+---
+
+## Top-Level Mounts
+
+In **`src/server.ts`** (or your main server file), we attach each router under an `/api` path:
+
+```ts
+app.use("/api/auth", authRoutes);
+app.use("/api/customers", customerRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/customers/:customerId/orders", orderRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/orders", bareOrderRoutes);
+app.use("/api/users", userRoutes);
+```
+
+- **`/api/auth`**
+  Handles registration and login.
+
+- **`/api/customers`**
+  CRUD operations for customer records.
+
+- **`/api/customers/:customerId/orders`**
+  Nested under customers: all orders for a specific customer.
+
+- **`/api/orders`**
+  “Bare” orders endpoint—e.g. for admin-level bulk access.
+
+- **`/api/products`**, **`/api/users`**, **`/api/analytics`**, **`/api/reports`**
+  Each resource has its own router and controller set.
+
+This pattern groups routes by domain, so middleware (authentication, validation) can be applied consistently at the router level.
+
+---
+
+## Nested Routes & `mergeParams`
+
+For customer orders, we need access to the `:customerId` param inside our order controllers. We do this by creating the router with `mergeParams: true`:
+
+```ts
+// src/routes/orderRoutes.ts
+import { Router } from "express";
+const router = Router({ mergeParams: true });
+
+router
+  .route("/")
+  .get(ensureLoggedIn, getOrdersForCustomer) // GET /customers/:customerId/orders
+  .post(ensureLoggedIn, validate(createOrderSchema), createOrder);
+
+router
+  .route("/:id")
+  .get(ensureLoggedIn, getOrderById) // GET /customers/:customerId/orders/:id
+  .put(ensureLoggedIn, validate(updateOrderSchema), updateOrder)
+  .delete(ensureLoggedIn, deleteOrder);
+
+export default router;
+```
+
+- **`mergeParams: true`** makes `req.params.customerId` available inside order handlers.
+- **Route chaining** (`.route("/")`) groups methods for the same path.
+- **`ensureLoggedIn`** enforces authentication on every orders endpoint.
+- **`validate(...)`** applies schema validation before controller logic.
+
+---
+
+## Applying Middleware
+
+You can attach common middleware at the router level or per-route:
+
+```ts
+// Protect all customer routes
+customerRoutes.use(ensureLoggedIn);
+
+// Validate new customer payloads
+customerRoutes.post("/", validate(createCustomerSchema), createCustomer);
+```
+
+This keeps your **main** server file clean and centralizes concerns within each route module.
+
+---
+
+## Why This Structure?
+
+1. **Clarity** – URLs mirror resources (`/customers`, `/products`, `/reports`).
+2. **Maintainability** – Each router file contains only its own concerns.
+3. **Reusability** – Middleware (auth, validation, logging) can be shared or scoped.
+4. **Scalability** – New routes (e.g. `/api/customers/:customerId/payments`) slot into the existing pattern seamlessly.
+
+With this organization, adding, testing, or refactoring endpoints is straightforward and predictable.

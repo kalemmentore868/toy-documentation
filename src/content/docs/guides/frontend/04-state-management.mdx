@@ -1,0 +1,148 @@
+---
+title: State Management
+description: Overview of front-end state management, including authentication context and server-state handling.
+---
+
+State in our front-end lives in three main places:
+
+1. **Local (UI) State**
+2. **Global State** via React Context
+3. **Server State** via React Query
+
+Each has its own responsibilities and lifecycles.
+
+---
+
+## 1. Local State
+
+Use React’s built-in hooks for transient UI state:
+
+- **`useState`** for simple flags, counters, toggles.
+- **`useReducer`** for more complex state transitions (e.g. form wizard steps).
+
+```tsx
+// Example: toggling a sidebar open/closed
+function SidebarToggle() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Button onClick={() => setOpen(!open)}>
+      {open ? "Close Sidebar" : "Open Sidebar"}
+    </Button>
+  );
+}
+```
+
+---
+
+## 2. Global State: AuthContext
+
+We need user info available across the app (login status, tokens, roles). We wrap our app in an `AuthProvider`:
+
+```tsx
+// src/context/AuthContext.tsx
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
+import type { User } from "@/types/User";
+
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  login: (user: User) => void;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Hydrate from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("user");
+    if (stored) setUser(JSON.parse(stored));
+    setLoading(false);
+  }, []);
+
+  function login(user: User) {
+    setUser(user);
+    localStorage.setItem("user", JSON.stringify(user));
+  }
+
+  function logout() {
+    setUser(null);
+    localStorage.removeItem("user");
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}
+```
+
+- Wrap your root component (e.g. in `main.tsx`) with `<AuthProvider>`.
+- Inside any component, call `const { user, login, logout, loading } = useAuth();`.
+
+---
+
+## 3. Server State: React Query
+
+We treat remote data (customers, orders, products) as “server state” and cache it with React Query:
+
+```ts
+// src/hooks/useCustomers.ts
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import CustomerService from "@/services/CustomerService";
+
+export function useCustomers() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["customers"],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await CustomerService.list(user!.token);
+      return data;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    cacheTime: 1000 * 60 * 30, // 30 minutes
+  });
+}
+```
+
+- **`queryKey`** uniquely identifies this data.
+- **`enabled`** gates the fetch until we have a valid `user.token`.
+- **`staleTime`** and **`cacheTime`** tune freshness and memory.
+
+React Query also handles loading and error states, so your UI can show spinners or error messages declaratively.
+
+---
+
+## 4. Derived & Form State
+
+- **Derived State**: use `useMemo` or `useCallback` to avoid expensive recalculations.
+- **Form State**: handled by **react-hook-form** and **zod**, but lives locally within each form component (e.g. `CustomerForm`).
+
+```tsx
+// Within CustomerForm.tsx
+const form = useForm<CustomerFormValues>({ resolver: zodResolver(schema) });
+const { handleSubmit, control, formState } = form;
+```
+
+---
+
+By combining local hooks, a focused global AuthContext, and React Query for server data, we keep state management clear, performant, and scalable.

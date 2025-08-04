@@ -1,36 +1,44 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
+title: Toy Store Management Docs
+description: Documentation for the Toy Store Management App’s front and back ends.
 template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
+  tagline: Manage your toy store with ease!
   image:
-    file: ../../assets/houston.webp
+    file: ../../assets/toyorbitlogo.png
   actions:
-    - text: Example Guide
-      link: /guides/example/
+    - text: Front-end Guide
+      link: /guides/frontend/01-introduction
       icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
-      icon: external
-      variant: minimal
+    - text: Back-end Guide
+      link: /guides/backend/
+      icon: right-arrow
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid } from "@astrojs/starlight/components";
 
-## Next steps
+Welcome to the documentation for the **Toy Store Management App**—a comprehensive, full-stack solution designed to streamline every aspect of your international toy store.
+
+## What this App Does
+
+The Toy Store Management App provides:
+
+- **Secure Authentication**: Log in as an admin via a user-friendly login page.
+- **Real-Time Dashboard**: Monitor key metrics including customer counts, weekly order trends, geographic distribution of orders, and breakdown of toy categories.
+- **Customer & Order Management**: Perform full CRUD operations on customers, orders, and products through an intuitive management interface.
+- **PDF Reporting**: Export detailed order reports in PDF format, customizable to your needs.
+
+## Dive into the Code
+
+Whether you're extending features or troubleshooting, these guides will take you straight to the source:
 
 <CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
-	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
-	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
-	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
-	</Card>
+  <Card title="Front-end Guide" icon="code">
+    Deep dive into the React + Vite front end: component structure, styling with
+    Tailwind, and API integration patterns.
+  </Card>
+  <Card title="Back-end Guide" icon="server">
+    Explore the Node.js + Express API: database schema in PostgreSQL,
+    authentication flow, and core business logic.
+  </Card>
 </CardGrid>

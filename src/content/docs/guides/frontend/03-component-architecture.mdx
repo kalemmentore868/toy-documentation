@@ -1,0 +1,262 @@
+---
+title: Component Architecture
+description: How components are organized and patterns for reusability in the Toy Store front-end.
+---
+
+Our front-end is built around small, focused components that are composed together into pages. We follow these patterns:
+
+- **Design-system primitives** live in `components/ui/` (from shadcn/ui).
+- **Domain components** live in `components/` and use those primitives to implement app-specific UI.
+- **Forms** are built once and reused for both “Create” and “Edit” flows.
+- **Data-display components** handle loading, error, and empty states.
+- **Layout components** (sidebar, header) wrap pages uniformly.
+
+---
+
+## Reusable Forms
+
+We define a single `CustomerForm` that handles both creation and updating of customers. It uses:
+
+- **react-hook-form** for form state
+- **zod** for schema validation
+- **shadcn/ui** form primitives for styling and accessibility
+
+```tsx
+// src/components/CustomerForm.tsx
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import type { Customer } from "@/types/Customer";
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+const customerSchema = z.object({
+  name: z.string().min(2, { message: "Name is required" }),
+  email: z.string().email({ message: "Invalid email address" }),
+  phone: z.string().optional().nullable(),
+  street: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  state: z.string().optional().nullable(),
+  postalCode: z.string().optional().nullable(),
+  country: z.string().optional().nullable(),
+});
+type CustomerFormValues = z.infer<typeof customerSchema>;
+
+interface CustomerFormProps {
+  customer?: Customer;
+  loading?: boolean;
+  onSubmit: (data: CustomerFormValues & { id?: string }) => void;
+}
+
+export function CustomerForm({
+  customer,
+  loading = false,
+  onSubmit,
+}: CustomerFormProps) {
+  const form = useForm<CustomerFormValues>({
+    resolver: zodResolver(customerSchema),
+    defaultValues: {
+      name: customer?.name ?? "",
+      email: customer?.email ?? "",
+      phone: customer?.phone ?? "",
+      street: customer?.street ?? "",
+      city: customer?.city ?? "",
+      state: customer?.state ?? "",
+      postalCode: customer?.postalCode ?? "",
+      country: customer?.country ?? "",
+    },
+  });
+
+  const { handleSubmit, control, formState } = form;
+
+  function handleFormSubmit(values: CustomerFormValues) {
+    onSubmit({
+      ...values,
+      id: customer?.id,
+    });
+  }
+
+  const isSubmitting = formState.isSubmitting || loading;
+  const buttonLabel = isSubmitting
+    ? "Saving…"
+    : customer
+    ? "Update Customer"
+    : "Create Customer";
+
+  return (
+    <Form {...form}>
+      <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+        {/* form fields… */}
+        <div className="flex justify-end">
+          <Button type="submit" variant="success" disabled={isSubmitting}>
+            {buttonLabel}
+          </Button>
+        </div>
+      </form>
+    </Form>
+  );
+}
+```
+
+### How It Works
+
+- **Default values** are set from `customer` when editing, or empty for creation.
+- The **submit handler** calls `onSubmit` with the filled values and optional `id`.
+- The **button label** switches between “Create Customer” and “Update Customer” based on presence of `customer`.
+- Any parent page can import `CustomerForm` and pass its own `onSubmit` to encapsulate create vs. update logic.
+
+---
+
+## Data-Display Components
+
+We follow a similar pattern for lists and detail views. For example, `CustomerOrders` fetches and displays orders for a given customer:
+
+```tsx
+// src/components/CustomerOrders.tsx
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import OrderService from "@/services/OrderService";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
+import { OrderRow } from "../OrderComponents/OrderRow";
+import { Link } from "react-router-dom";
+import { Button } from "../ui/button";
+
+export function CustomerOrders({ customerId }: { customerId: string }) {
+  const { user } = useAuth();
+  const {
+    data: orders = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["orders", customerId],
+    enabled: !!user,
+    queryFn: () =>
+      OrderService.list(customerId, user!.token).then((res) => res.data),
+  });
+
+  if (isLoading) {
+    return <Loader2 className="animate-spin h-6 w-6" />;
+  }
+  if (isError) {
+    return (
+      <div className="text-destructive">
+        Error: {error.message}
+        <Button onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Customer Orders</CardTitle>
+        <Link to={`/customers/${customerId}/orders/new`}>
+          <Button variant="success">Create Order</Button>
+        </Link>
+      </CardHeader>
+      <CardContent>
+        {orders.length === 0 ? (
+          <p>No orders found.</p>
+        ) : (
+          <table>{/* rows mapped via OrderRow */}</table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+---
+
+## Layout & Navigation
+
+We provide a consistent shell using AppSidebar and Layout:
+
+```ts
+// src/components/Sidebar.tsx
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
+import { NavLink } from "react-router-dom";
+import {
+  Home,
+  Users,
+  ShoppingCart,
+  ToyBrick,
+  User,
+  LogOut,
+} from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+
+const navItems = [
+  { title: "Dashboard", to: "/", icon: Home },
+  { title: "Customers", to: "/customers", icon: Users },
+  { title: "Orders", to: "/orders", icon: ShoppingCart },
+  { title: "Products", to: "/products", icon: ToyBrick },
+  { title: "Users", to: "/users", icon: User },
+];
+
+export function AppSidebar() {
+  const { logout } = useAuth();
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarContent>
+        {/* logo and nav items… */}
+        <SidebarMenu>
+          {navItems.map(({ title, to, icon: Icon }) => (
+            <SidebarMenuItem key={title}>
+              <NavLink to={to}>
+                <Icon className="h-5 w-5" />
+                <span>{title}</span>
+              </NavLink>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+        <SidebarMenuItem onClick={logout} variant="destructive">
+          <LogOut /> Logout
+        </SidebarMenuItem>
+      </SidebarContent>
+    </Sidebar>
+  );
+}
+
+// src/components/Layout.tsx
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "./Sidebar";
+import type { ReactNode } from "react";
+
+export function Layout({ children }: { children: ReactNode }) {
+  return (
+    <SidebarProvider>
+      <AppSidebar />
+      <main className="w-full h-full py-2 px-4">
+        <SidebarTrigger />
+        {children}
+      </main>
+    </SidebarProvider>
+  );
+}
+```
+
+---
+
+Pages wrap their content in Layout to ensure consistent navigation, responsive collapse behavior, and styling.
+
+---
+
+By centralizing form logic, data-fetching components, and layout primitives, we achieve a maintainable, scalable architecture where new features can be added with minimal duplication.

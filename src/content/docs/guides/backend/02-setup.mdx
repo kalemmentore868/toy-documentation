@@ -1,0 +1,93 @@
+---
+title: Setup
+description: How to install dependencies, configure environment variables, and start the backend locally.
+---
+
+## Prerequisites
+
+- **Node.js ≥ 20** (`node -v`)
+- **npm** (bundled with Node)
+- **Git**
+- **Xata account & API key**
+- **OpenAI API key**
+- Optional: **Docker** (for containerized run)
+
+---
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/kalemmentore868/demo-toy-api.git
+cd demo-toy-api
+```
+
+---
+
+## 2. Install Dependencies
+
+```bash
+npm install --legacy-peer-deps
+```
+
+---
+
+## 3. Configure Environment Variables
+
+Create a `.env` file in the project root with the following values:
+
+```bash
+# Server
+PORT=5500
+JWT_SECRET=your_jwt_secret_here
+
+# Xata (managed PostgreSQL) configuration
+XATA_API_KEY=your_xata_api_key_here
+XATA_BRANCH=main
+XATA_DB_URL=https://your-workspace-name.xata.sh/db/toystore?branchName=main
+
+OPENAI_API_KEY=""
+```
+
+> **Tip:** Obtain `XATA_API_KEY` and `XATA_DB_URL` from your [Xata dashboard](https://xata.io).
+
+---
+
+## 4. Start the Server
+
+```bash
+npm run dev
+```
+
+- Server will listen on **[http://localhost:5500](http://localhost:5500)**
+
+---
+
+## 5. Docker Run (Optional)
+
+If you prefer Docker, build and run the container:
+
+```bash
+# Build the image
+docker build -t toy-api .
+
+# Run the container
+docker run -d --name toy-api -p 5500:5500 toy-api
+```
+
+---
+
+## 6. Verify
+
+- Open **[http://localhost:5500/health](http://localhost:5500/health)** in your browser or Postman
+- You should receive a JSON response:
+
+  ```json
+  { "status": "ok" }
+  ```
+
+---
+
+## Next Steps
+
+- Continue to **Database Architecture** to learn how Xata schemas are defined
+- Then explore **Authentication and Middleware** for route protection

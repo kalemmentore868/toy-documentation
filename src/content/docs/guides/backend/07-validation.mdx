@@ -1,0 +1,106 @@
+---
+title: Validation
+description: How request payload validation is implemented using Zod schemas and middleware.
+---
+
+We enforce strong input validation at the middleware layer before requests reach controllers. This ensures:
+
+- **Early error detection**
+- **Consistent error responses**
+- **Cleaner controller code**
+
+---
+
+## `validate` Middleware
+
+The `validate` function wraps any Zod schema and applies it to `req.body`:
+
+```ts
+// src/middleware/validate.ts
+import { z, ZodError, ZodSchema } from "zod";
+import { Request, Response, NextFunction } from "express";
+import { BadRequestError } from "../helpers/errors";
+
+export function validate(schema: ZodSchema<any>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      schema.parse(req.body);
+      next();
+    } catch (err) {
+      if (err instanceof ZodError) {
+        const pretty = z.prettifyError(err);
+        throw new BadRequestError(pretty);
+      }
+      next(err);
+    }
+  };
+}
+```
+
+- **`schema.parse(req.body)`** throws a `ZodError` if validation fails.
+- We catch that and convert it into a `BadRequestError` with readable messages.
+
+---
+
+## Schema Definitions
+
+Define request shapes using Zod in `src/schemas`:
+
+```ts
+// src/schemas/customerSchema.ts
+import { z } from "zod";
+
+// Payload for creating a customer
+export const createCustomerSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().min(1, "Phone is required"),
+  street: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
+});
+
+// Payload for updating a customer: all fields optional
+export const updateCustomerSchema = createCustomerSchema.partial();
+
+// TypeScript types
+export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+```
+
+---
+
+## Applying Validation
+
+Attach `validate(...)` before controller handlers in your router:
+
+```ts
+// src/routes/customerRoutes.ts
+router.post(
+  "/",
+  ensureLoggedIn,
+  validate(createCustomerSchema),
+  createCustomer
+);
+
+router.put(
+  "/:id",
+  ensureLoggedIn,
+  validate(updateCustomerSchema),
+  updateCustomer
+);
+```
+
+- **`validate(createCustomerSchema)`** ensures required fields on creation.
+- **`validate(updateCustomerSchema)`** allows partial updates.
+
+---
+
+## Benefits
+
+- **Security**: Prevents malformed or malicious payloads.
+- **Clarity**: Controllers receive guaranteed-valid data shapes.
+- **User Feedback**: Returns clear, detailed error messages on invalid input.
+- **Maintainability**: Centralized schemas make it easy to evolve your API contract.

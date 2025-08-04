@@ -1,0 +1,127 @@
+---
+title: Data Fetching
+description: Techniques and patterns for fetching and mutating data using React Query and service classes.
+---
+
+Our front-end centralizes all HTTP interactions in **service classes** (under `src/services/`) and exposes those operations via **custom hooks** (under `src/hooks/`) powered by **React Query**. This approach cleanly separates concerns:
+
+- **Service classes** handle low-level API calls via Axios.
+- **Hooks** encapsulate React Query logic (caching, revalidation, mutations).
+- **Components** simply call hooks and render based on `data`, `isLoading`, `isError`.
+
+---
+
+## 1. Querying Data with `useQuery`
+
+### Example: Fetching Customers
+
+```ts
+// src/hooks/useCustomers.ts
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import CustomerService from "@/services/CustomerService";
+
+export function useCustomers() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["customers"],
+    enabled: !!user,
+    queryFn: async () => {
+      const res = await CustomerService.list(user!.token);
+      return res.data;
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    cacheTime: 1000 * 60 * 10, // 10 minutes
+  });
+}
+```
+
+- **`queryKey`**: unique identifier for this data.
+- **`enabled`**: prevents the query until we have a valid auth token.
+- **`staleTime` / `cacheTime`**: tune freshness and memory usage.
+
+---
+
+## 2. Mutating Data with `useMutation`
+
+Mutations handle POST/PUT/DELETE and allow optimistic updates or query invalidation.
+
+### Example: Creating a Customer
+
+```ts
+// src/hooks/useCreateCustomer.ts
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import CustomerService from "@/services/CustomerService";
+import type { Customer } from "@/types/Customer";
+
+export function useCreateCustomer() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: Omit<Customer, "id" | "createdAt" | "updatedAt">) =>
+      CustomerService.create(data, user!.token).then((res) => res.data),
+    onSuccess: () => {
+      // Refresh the customers list after successful creation
+      queryClient.invalidateQueries(["customers"]);
+    },
+  });
+}
+```
+
+### Example: Updating & Deleting
+
+```ts
+// src/hooks/useUpdateCustomer.ts
+export function useUpdateCustomer() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Customer> }) =>
+      CustomerService.update(id, data, user!.token).then((res) => res.data),
+    onSuccess: () => queryClient.invalidateQueries(["customers"]),
+  });
+}
+
+// src/hooks/useDeleteCustomer.ts
+export function useDeleteCustomer() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      CustomerService.delete(id, user!.token).then((res) => res.data),
+    onSuccess: () => queryClient.invalidateQueries(["customers"]),
+  });
+}
+```
+
+- **`onSuccess`** invalidates or refetches queries to keep UI in sync.
+
+---
+
+## 3. Error Handling & Loading States
+
+React Query exposes flags for each query/mutation:
+
+- `isLoading` / `isFetching`: initial or background loading.
+- `isError`: whether the request failed.
+- `error`: server or network error object.
+
+Use these in UI components to show spinners, error messages, or retry buttons.
+
+---
+
+## 5. Best Practices
+
+- **Centralize API calls** in service classes for reusability and ease of testing.
+- **Encapsulate React Query logic** in custom hooks to simplify components.
+- **Invalidate only necessary queries** on mutation success to minimize network traffic.
+- **Adjust `staleTime` / `cacheTime`** based on how fresh data must be.
+- **Consider optimistic updates** for a snappier UX, rolling back on errors.
+
+---
+
+By combining service classes with React Query hooks, we achieve a clean, declarative data-fetching layer that handles caching, deduplication, and state synchronization for us.
